@@ -55,13 +55,13 @@ int main(int argc, char **argv)
 
 	cv::Mat leftMask  = cv::Mat(leftImg.rows, leftImg.cols, CV_8UC1, cv::Scalar(255));
 	cv::Mat rightMask = cv::Mat(rightImg.rows, rightImg.cols, CV_8UC1, cv::Scalar(255));
- 	cv::Mat leftMaskDil = cv::Mat(rightImg.rows, rightImg.cols, CV_8UC1), rightMaskDil = cv::Mat(rightImg.rows, rightImg.cols, CV_8UC1);
+ 	cv::Mat rightMaskDilate = cv::Mat(rightImg.rows, rightImg.cols, CV_8UC1);
 	
     start  = clock();
 	StereoDisparity::calc_roi_mask(leftImg, leftMask); // 3.3 ms
 	StereoDisparity::calc_roi_mask(rightImg, rightMask); // 3.3 ms
-	StereoDisparity::image_dilate(rightMask, true, false, rightMaskDil);
-	StereoDisparity::calc_mask_disparity(leftImg, rightImg, leftMask, rightMaskDil, 3, 5, 50, true, 0, dispImg);
+	StereoDisparity::image_dilate(rightMask, true, false, rightMaskDilate);
+	StereoDisparity::calc_mask_disparity(leftImg, rightImg, leftMask, rightMaskDilate, 5, 5, 50, true, false, dispImg);
 	finish = clock();
 
 
@@ -69,12 +69,18 @@ int main(int argc, char **argv)
 	cv::imshow(rightWindowName,rightImg);
 
 	cv::imshow("leftmask",  leftMask);
-	cv::imshow("rightmask", rightMaskDil);
+	cv::imshow("rightmask", rightMaskDilate);
 
     double duration = (double)(finish - start)/1000000.0;
     printf("실행 시간 : %f 초\n", duration);
 
-	cv::imshow(disparityWindowName, dispImg);
+	double min, max;
+	cv::minMaxIdx(dispImg,&min,&max);
+	std::cout<<min<<","<<max<<std::endl;
+	cv::Mat adjMap, falseColorsMap;
+	dispImg.convertTo(adjMap,CV_8UC1, 255/(max-min),-min);
+	cv::applyColorMap(adjMap, falseColorsMap, cv::COLORMAP_AUTUMN);
+	cv::imshow(disparityWindowName, falseColorsMap);
 	cv::waitKey(0);
 	printf("Done stereo_disparity.\n");
 

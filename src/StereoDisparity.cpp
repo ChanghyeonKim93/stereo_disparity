@@ -18,39 +18,43 @@
 
 	// initialize
 	dispImg.release();
-	dispImg = cv::Mat(numRows, numCols, CV_8UC1, cv::Scalar(0));
+	dispImg = cv::Mat(numRows, numCols, CV_64FC1, cv::Scalar(0));
+
+	const uchar* leftStripData  = (const uchar*) leftImg.data;
+	const uchar* rightStripData = (const uchar*) rightImg.data;
+	const uchar* leftMaskData   = (const uchar*) leftMaskImg.data;
+	const uchar* rightMaskData  = (const uchar*) rightMaskImg.data;
+	double* dispImgData          = (double*) dispImg.data;
 
 	for(int v = 0 + patchRadius; v < numRows - patchRadius; v++)
 	{
-		
-		const uchar* leftStripData  = (const uchar*) leftImg.data;
-		const uchar* rightStripData = (const uchar*) rightImg.data;
 
-		const uchar* leftMaskData   = (const uchar*) leftMaskImg.data;
-		const uchar* rightMaskData  = (const uchar*) rightMaskImg.data;
-		uchar* dispImgData          = (uchar*) dispImg.data;
-
+		int currRows = v*numCols;
 		for(int u = 0 + maxDisp + patchRadius; u < numCols - patchRadius; u++)
 		{
-			double curMin = 1e99;
-			int curIdx    = 0;
+			double curMin = 1e30;
+			int curIdx    = u;
 
 			// If the current pixel of the leftImg is a interesting point, calculate the disparity.
-			if( leftMaskData[v*numCols + u] > 0 )
+			if( leftMaskData[currRows + u] > 0 )
 			{
 				double sumDist[numCols] = {0.0};
+				//for(int nn = 0; nn < numCols; nn++) sumDist[nn] = 1e30; // initialize
 				for(int i = u - maxDisp; i < u - minDisp; i++)
 				{
-					if( rightMaskData[v*numCols + i] > 0 )
+					if( rightMaskData[currRows + i] > 0 )
 					{
 						// SSD
-	    				// for(int nn = -patchRadius; nn < patchRadius; nn++) sumDist[i] += (leftStripData[v*numCols + u + nn] - rightStripData[v*numCols + i + nn]) * (leftStripData[v*numCols + u + nn] - rightStripData[v*numCols + i + nn]);						
-						//for(int nn = -patchRadius; nn < patchRadius; nn++) sumDist[i] += fabs(leftStripData[(v-2)*numCols + u + nn] - rightStripData[(v-2)*numCols + i + nn]);						
-						for(int vv = -patchRadius; vv < patchRadius; vv++)						
+	    				for(int vv = -2; vv < 2; vv++)						
 						{
+							int currRowsInside = (v+vv)*numCols;
 							for(int uu = -patchRadius; uu < patchRadius; uu++)
-							{
-								sumDist[i] += fabs(leftStripData[(v+vv)*numCols + u + uu] - rightStripData[(v+vv)*numCols + i + uu]);
+							{	
+								// SAD
+								//sumDist[i] += fabs(leftStripData[(v+vv)*numCols + u + uu] - rightStripData[(v+vv)*numCols + i + uu]);
+								
+								// SSD
+								sumDist[i] += ( ( (double)leftStripData[currRowsInside + u + uu] - (double)rightStripData[currRowsInside + i + uu])*( (double)leftStripData[currRowsInside + u + uu] - (double)rightStripData[currRowsInside + i + uu]));
 							}
 						}
 						
@@ -64,28 +68,61 @@
 						}
 					}
 				}
+				// std::cout<<curMin<<","<<curIdx<<std::endl;
 
-				if(onInterp == true)
+				if(onOutlier)
 				{
-					double x0 = curIdx-1;
-					double x1 = curIdx;
-					double x2 = curIdx+1;
-					double y0 = sumDist[curIdx-1];
-					double y1 = sumDist[curIdx];
-					double y2 = sumDist[curIdx+1];
+					if( 1 && curIdx > u - maxDisp && curIdx < u - minDisp)
+					{
+						if(onInterp)
+						{
+							double x1 = curIdx - 1;
+							double x2 = curIdx;
+							double x3 = curIdx + 1;
+							double y1 = sumDist[curIdx - 1];
+							double y2 = sumDist[curIdx];
+							double y3 = sumDist[curIdx + 1];
 
-					double x_optimal = -0.5*( y0*(x2*x2 - x1*x1) + y1*(x0*x0 - x2*x2) + y2*(x1*x1 - x0*x0) )/(y0*(x1-x2) + y1*(x2-x0) + y2*(x0-x1) );
-					dispImgData[v*numCols+u] = (double)u - x_optimal;
+							double x_optimal = -0.5*( y1*(x3*x3 - x2*x2) + y2*(x1*x1 - x3*x3) + y3*(x2*x2 - x1*x1) )/(y1*(x2-x3) + y2*(x3-x1) + y3*(x1-x2) );
+							dispImgData[currRows+u] = (double)u - x_optimal;
+						}
+						else // do not use 
+						{
+							dispImgData[currRows + u] = (double)(u - curIdx);
+						}
+					}
+					else{
+						dispImgData[currRows+u] = (double)(u - curIdx);
+					}
+					
 				}
-				else // do not use 
+				else
 				{
-					//std::cout<<u-curIdx<<std::endl;
-					dispImgData[v*numCols+u] = (u - curIdx);
+					if(onInterp)
+					{
+						double x1 = curIdx-1;
+						double x2 = curIdx;
+						double x3 = curIdx+1;
+						double y1 = sumDist[curIdx-1];
+						double y2 = sumDist[curIdx];
+						double y3 = sumDist[curIdx+1];
+
+						double x_optimal = -0.5*( y1*(x3*x3 - x2*x2) + y2*(x1*x1 - x3*x3) + y3*(x2*x2 - x1*x1) )/(y1*(x2-x3) + y2*(x3-x1) + y3*(x1-x2) );
+						std::cout<<"curidx:"<<curIdx<<", optimal:"<<x_optimal<<std::endl;
+						if(isnan(x_optimal)) dispImgData[currRows+u] = (double)u;
+						else dispImgData[currRows+u] = (double)u - x_optimal;
+					}
+					else // do not use 
+					{
+						//std::cout<<u-curIdx<<std::endl;
+						dispImgData[currRows+u] = (double)(u - curIdx);
+					}
 				}
 			}
 		}
 	}
 };
+
 
 
 void StereoDisparity::image_dilate(const cv::Mat& inputImg, const int& onHorizontal, const int& onVertical, cv::Mat& outputImg) {
@@ -194,6 +231,36 @@ void StereoDisparity::calc_roi_mask(const cv::Mat& inputImg, cv::Mat& maskImg){
 	
 }
 
+void StereoDisparity::calc_gradient(const cv::Mat& imgInput, cv::Mat& imgGradx, cv::Mat& imgGrady, cv::Mat& imgGrad, const bool& doGaussian){
+  // calculate gradient along each direction.
+  cv::Mat imgGradxShort, imgGradyShort;
+  cv::Sobel(imgInput, imgGradxShort, CV_16S, 1,0,3,1,0,cv::BORDER_DEFAULT); // CV_16S : short -32768~32768, CV_64F : double
+  cv::Sobel(imgInput, imgGradyShort, CV_16S, 0,1,3,1,0,cv::BORDER_DEFAULT);
+
+  if(doGaussian == true){ // apply Gaussian filtering or not
+    cv::GaussianBlur(imgGradxShort, imgGradxShort, cv::Size(3,3),0.1	,0.1);
+    cv::GaussianBlur(imgGradxShort, imgGradxShort, cv::Size(3,3),0.1,0.1);
+  }
+  // calculate gradient norm
+  imgGrad.create(imgInput.size(), CV_64F);
+  imgGradx.create(imgInput.size(), CV_64F);
+  imgGrady.create(imgInput.size(), CV_64F);
+
+  int u, v;
+  for(v = 0; v < imgInput.rows; v++){
+    short* imgGradxShortPtr = imgGradxShort.ptr<short>(v);
+    short* imgGradyShortPtr = imgGradyShort.ptr<short>(v);
+	double* imgGradxPtr     = imgGradx.ptr<double>(v);
+	double* imgGradyPtr     = imgGrady.ptr<double>(v);
+    double* imgGradPtr      = imgGrad.ptr<double>(v);
+    for(u = 0; u < imgInput.cols; u++){
+      *(imgGradPtr+u) = sqrt( (double)( ( *(imgGradxShortPtr + u) ) * ( *(imgGradxShortPtr + u) ) + ( *(imgGradyShortPtr + u) ) * ( *(imgGradyShortPtr + u) ) ) );
+	  *(imgGradxPtr+u) = (double)(*(imgGradxShortPtr+u))/(*(imgGradPtr+u));
+	  *(imgGradyPtr+u) = (double)(*(imgGradyShortPtr+u))/(*(imgGradPtr+u));
+	}
+  }
+}
+
 
 
 double norm_vector(const std::vector<double>& inputVec){
@@ -225,41 +292,3 @@ double inner_vector(const std::vector<double>& inputVec1, const std::vector<doub
 
 
 
-
-
-
-
-
-
-
-
-
-void calc_gradient(const cv::Mat& imgInput, cv::Mat& imgGradx, cv::Mat& imgGrady, cv::Mat& imgGrad, const bool& doGaussian){
-  // calculate gradient along each direction.
-  cv::Mat imgGradxShort, imgGradyShort;
-  cv::Sobel(imgInput, imgGradxShort, CV_16S, 1,0,3,1,0,cv::BORDER_DEFAULT); // CV_16S : short -32768~32768, CV_64F : double
-  cv::Sobel(imgInput, imgGradyShort, CV_16S, 0,1,3,1,0,cv::BORDER_DEFAULT);
-
-  if(doGaussian == true){ // apply Gaussian filtering or not
-    cv::GaussianBlur(imgGradxShort, imgGradxShort, cv::Size(3,3),0.1	,0.1);
-    cv::GaussianBlur(imgGradxShort, imgGradxShort, cv::Size(3,3),0.1,0.1);
-  }
-  // calculate gradient norm
-  imgGrad.create(imgInput.size(), CV_64F);
-  imgGradx.create(imgInput.size(), CV_64F);
-  imgGrady.create(imgInput.size(), CV_64F);
-
-  int u, v;
-  for(v = 0; v < imgInput.rows; v++){
-    short* imgGradxShortPtr = imgGradxShort.ptr<short>(v);
-    short* imgGradyShortPtr = imgGradyShort.ptr<short>(v);
-	double* imgGradxPtr     = imgGradx.ptr<double>(v);
-	double* imgGradyPtr     = imgGrady.ptr<double>(v);
-    double* imgGradPtr      = imgGrad.ptr<double>(v);
-    for(u = 0; u < imgInput.cols; u++){
-      *(imgGradPtr+u) = sqrt( (double)( ( *(imgGradxShortPtr + u) ) * ( *(imgGradxShortPtr + u) ) + ( *(imgGradyShortPtr + u) ) * ( *(imgGradyShortPtr + u) ) ) );
-	  *(imgGradxPtr+u) = (double)(*(imgGradxShortPtr+u))/(*(imgGradPtr+u));
-	  *(imgGradyPtr+u) = (double)(*(imgGradyShortPtr+u))/(*(imgGradPtr+u));
-	}
-  }
-}
