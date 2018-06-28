@@ -1,0 +1,11 @@
+<launch>
+    <arg name="image_left_name"  default="/stereo/left/image_raw"/>
+    <arg name="image_right_name" default="/stereo/right/image_raw"/>
+    <arg name="save_dir"         default="/home/icslkchlap/saveStereo/"/>
+
+    <node pkg="stereo_logger" name="stereo_logger_node" type="stereo_logger_node">
+        <param name="image_left_topic_name"  type="string" value="$(arg image_left_name)"/>
+        <param name="image_right_topic_name" type="string" value="$(arg image_right_name)"/>
+	<param name="folder_dir" type="string" value="$(arg save_dir)"/>
+    </node>
+</launch>
